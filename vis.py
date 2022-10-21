@@ -10,7 +10,12 @@ import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 from matplotlib.collections import PatchCollection
 
-def vis(test, limits=None, equal_aspect=True):
+"""
+vis
+Description:
+    Visualizes the paths and the obstacles/propositions in the environment.
+"""
+def vis(test, limits=None, equal_aspect=True, filename=""):
     _, plots, PWLs = test()
 
     print(PWLs)
@@ -55,4 +60,10 @@ def vis(test, limits=None, equal_aspect=True):
         ax.plot([P[0][0] for P in PWL], [P[0][1] for P in PWL], '-', color = colors[i])
         ax.plot(PWL[-1][0][0], PWL[-1][0][1], '*', color = colors[i])
         ax.plot(PWL[0][0][0], PWL[0][0][1], 'o', color = colors[i])
+
+    # Save figure to file if a filename is given.
+    if filename != "":
+        # Save figure to file
+        plt.savefig(filename)
+    
     plt.show()
