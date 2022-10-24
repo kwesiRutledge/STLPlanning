@@ -15,7 +15,7 @@ vis
 Description:
     Visualizes the paths and the obstacles/propositions in the environment.
 """
-def vis(test, limits=None, equal_aspect=True, filename=""):
+def vis(test, limits=None, equal_aspect=True, filename="", size_list=[]):
     _, plots, PWLs = test()
 
     print(PWLs)
@@ -49,6 +49,12 @@ def vis(test, limits=None, equal_aspect=True, filename=""):
         plt.show()
         return
 
+    # Create the size array, if it does not exist.
+    default_size = 0.11*4/2
+    if size_list == []:
+        for idx_a in range(len(PWLs)):
+            size_list.append(default_size)
+
     if len(PWLs) <= 4:
         colors = ['k', np.array([153,0,71])/255, np.array([6,0,153])/255, np.array([0, 150, 0])/255]
     else:
@@ -59,7 +65,10 @@ def vis(test, limits=None, equal_aspect=True, filename=""):
         PWL = PWLs[i]
         ax.plot([P[0][0] for P in PWL], [P[0][1] for P in PWL], '-', color = colors[i])
         ax.plot(PWL[-1][0][0], PWL[-1][0][1], '*', color = colors[i])
-        ax.plot(PWL[0][0][0], PWL[0][0][1], 'o', color = colors[i])
+        ax.add_patch(
+            plt.Circle( (PWL[0][0][0], PWL[0][0][1]) , size_list[i], color=colors[i] )
+        )
+        # ax.plot(PWL[0][0][0], PWL[0][0][1], 'o', color = colors[i])
 
     # Save figure to file if a filename is given.
     if filename != "":

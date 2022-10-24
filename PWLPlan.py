@@ -264,7 +264,8 @@ def add_CDTree_Constraints(model, root):
     for con in constrs:
         model.addConstr(con >= 0)
 
-def plan(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MIPGap=1e-4, max_segs=None, tmax=None, hard_goals=None, size=0.11*4/2):
+def plan(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MIPGap=1e-4, max_segs=None, tmax=None, hard_goals=None, size_list=[]):
+    # Create the limitations on the number of piece-wise linear segments.
     if num_segs is None:
         min_segs = 1
         assert max_segs is not None
@@ -272,6 +273,13 @@ def plan(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MIP
         min_segs = num_segs
         max_segs = num_segs
 
+    # Create the size array, if it does not exist.
+    default_size = 0.11*4/2
+    if size_list == []:
+        for idx_a in range(len(x0s)):
+            size_list.append(default_size)
+
+    # Try each segment number between min_segs and max_segs (if it exists)
     for num_segs in range(min_segs, max_segs+1):
         for spec in specs:
             clearSpecTree(spec)
@@ -313,13 +321,16 @@ def plan(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MIP
             add_velocity_constraints(m, PWL, vmax=vmax)
             add_time_constraints(m, PWL, tmax)
 
-            handleSpecTree(spec, PWL, bloat, size)
+            # Get Size of the object
+            size_a = size_list[idx_a]
+            handleSpecTree(spec, PWL, bloat, size_a)
             add_CDTree_Constraints(m, spec.zs[0])
 
         if tasks is not None:
             for idx_agent in range(len(tasks)):
+                size_a = size_list[idx_agent]
                 for idx_task in range(len(tasks[idx_agent])):
-                    handleSpecTree(tasks[idx_agent][idx_task], PWLs[idx_agent], bloat, size)
+                    handleSpecTree(tasks[idx_agent][idx_task], PWLs[idx_agent], bloat, size_a)
 
             conjunctions = []
             for idx_task in range(len(tasks[0])):
@@ -355,3 +366,126 @@ def plan(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MIP
         except Exception as e:
             m.dispose()
     return [None,]
+
+"""
+plan2
+Description:
+    Introducing a breaking change to plan.
+    This function will not only return the final values for the trajectory, but also the values of ALL variables in the Gurobi model.
+"""
+def plan2(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MIPGap=1e-4, max_segs=None, tmax=None, hard_goals=None, size_list=[]):
+    # Create the limitations on the number of piece-wise linear segments.
+    if num_segs is None:
+        min_segs = 1
+        assert max_segs is not None
+    else:
+        min_segs = num_segs
+        max_segs = num_segs
+
+    # Create the size array, if it does not exist.
+    default_size = 0.11*4/2
+    if size_list == []:
+        for idx_a in range(len(x0s)):
+            size_list.append(default_size)
+
+    # Try each segment number between min_segs and max_segs (if it exists)
+    for num_segs in range(min_segs, max_segs+1):
+        for spec in specs:
+            clearSpecTree(spec)
+        print('----------------------------')
+        print('num_segs', num_segs)
+
+        PWLs = []
+        m = Model("xref")
+        # m.setParam(GRB.Param.OutputFlag, 0)
+        m.setParam(GRB.Param.IntFeasTol, IntFeasTol)
+        m.setParam(GRB.Param.MIPGap, MIPGap)
+        # m.setParam(GRB.Param.NonConvex, 2)
+        # m.getEnv().set(GRB_IntParam_OutputFlag, 0)
+
+        for idx_a in range(len(x0s)):
+            x0 = x0s[idx_a]
+            x0 = np.array(x0).reshape(-1).tolist()
+            spec = specs[idx_a]
+
+            dims = len(x0)
+
+            PWL = []
+            for i in range(num_segs+1):
+                PWL.append([m.addVars(dims, lb=-GRB.INFINITY), m.addVar()])
+            PWLs.append(PWL)
+            m.update()
+
+            # the initial constriant
+            m.addConstrs(PWL[0][0][i] == x0[i] for i in range(dims))
+            m.addConstr(PWL[0][1] == 0)
+
+            if hard_goals is not None:
+                goal = hard_goals[idx_a]
+                m.addConstrs(PWL[-1][0][i] == goal[i] for i in range(dims))
+
+            if limits is not None:
+                add_space_constraints(m, [P[0] for P in PWL], limits)
+
+            add_velocity_constraints(m, PWL, vmax=vmax)
+            add_time_constraints(m, PWL, tmax)
+
+            # Get Size of the object
+            size_a = size_list[idx_a]
+            handleSpecTree(spec, PWL, bloat, size_a)
+            add_CDTree_Constraints(m, spec.zs[0])
+
+        if tasks is not None:
+            for idx_agent in range(len(tasks)):
+                size_a = size_list[idx_agent]
+                for idx_task in range(len(tasks[idx_agent])):
+                    handleSpecTree(tasks[idx_agent][idx_task], PWLs[idx_agent], bloat, size_a)
+
+            conjunctions = []
+            for idx_task in range(len(tasks[0])):
+                disjunctions = [tasks[idx_agent][idx_task].zs[0] for idx_agent in range(len(tasks))]
+                conjunctions.append(Disjunction(disjunctions))
+            z = Conjunction(conjunctions)
+            add_CDTree_Constraints(m, z)
+
+        add_mutual_clearance_constraints(m, PWLs, bloat)
+
+        # obj = sum([L1Norm(m, _sub(PWL[i][0], PWL[i+1][0])) for PWL in PWLs for i in range(len(PWL)-1)])
+        obj = sum([PWL[-1][1] for PWL in PWLs])
+        m.setObjective(obj, GRB.MINIMIZE)
+
+        m.write("test.lp")
+        print('NumBinVars: %d'%m.getAttr('NumBinVars'))
+
+        # m.computeIIS()
+        # import ipdb;ipdb.set_treace()
+        try:
+            start = time.time()
+            m.optimize()
+            end = time.time()
+            print('solving it takes %.3f s'%(end - start))
+            PWLs_output = []
+            for PWL in PWLs:
+                PWL_output = []
+                for P in PWL:
+                    PWL_output.append([[P[0][i].X for i in range(len(P[0]))], P[1].X])
+                PWLs_output.append(PWL_output)
+
+            # Extract all model variables
+            vars = m.getVars()
+            print(vars)
+            print("something something.")
+            print(vars[0])
+            print("There are " + str(len(vars)) + " vars in the model!")
+            print("What is happening?")
+            var_values = []
+
+            for var in vars:
+                var_values.append(var.X)
+
+            m.dispose()
+            return PWLs_output, vars, var_values
+        except Exception as e:
+            print("Exception detected: " + string(e))
+            m.dispose()
+    return [None,None,None]
