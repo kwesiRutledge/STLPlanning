@@ -384,9 +384,12 @@ def plan2(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MI
 
     # Create the size array, if it does not exist.
     default_size = 0.11*4/2
-    if size_list == []:
-        for idx_a in range(len(x0s)):
-            size_list.append(default_size)
+    if len(size_list) == 0:
+        size_list = [default_size for idx_a in range(len(x0s))]
+
+    print(x0s)
+    print(len(x0s))
+    print("size_list = ", size_list)
 
     # Try each segment number between min_segs and max_segs (if it exists)
     for num_segs in range(min_segs, max_segs+1):
@@ -471,21 +474,18 @@ def plan2(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MI
                     PWL_output.append([[P[0][i].X for i in range(len(P[0]))], P[1].X])
                 PWLs_output.append(PWL_output)
 
-            # Extract all model variables
+            # Extract model data
+            # - all model variables
             vars = m.getVars()
-            print(vars)
-            print("something something.")
-            print(vars[0])
-            print("There are " + str(len(vars)) + " vars in the model!")
-            print("What is happening?")
-            var_values = []
-
-            for var in vars:
-                var_values.append(var.X)
+            var_values = [var.X for var in vars]
+            # - runtime
+            model_data = {
+                'Runtime': m.Runtime
+            }
 
             m.dispose()
-            return PWLs_output, vars, var_values
+            return PWLs_output, vars, var_values, model_data
         except Exception as e:
-            print("Exception detected: " + string(e))
+            print("Exception detected: " + str(e))
             m.dispose()
-    return [None,None,None]
+    return [None,None,None,None]
