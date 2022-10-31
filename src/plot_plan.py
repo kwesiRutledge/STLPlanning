@@ -6,9 +6,14 @@ Description:
     This returns the figure handle. The figure will still need to be shown or saved by the calling function, if desired.
 """
 
+from importlib.metadata import metadata
+from tkinter import CENTER
+from typing import List
 import matplotlib.pyplot as plt
 import pypoman as ppm
 import numpy as np
+
+import matplotlib.animation as manimation
 
 def plot_plan(pwl_plans,plot_tuples,size_list=[],equal_aspect=True,limits=None):
 
@@ -68,3 +73,307 @@ def plot_plan(pwl_plans,plot_tuples,size_list=[],equal_aspect=True,limits=None):
         # ax.plot(PWL[0][0][0], PWL[0][0][1], 'o', color = colors[i])
 
     return fig
+
+"""
+plot_single_team_plan
+Description:
+    Plots a single team's plan by plotting the small circles which correspond to each agent on top of a larger circle (with middling alpha)
+    where the team is constrained to remain.
+"""
+def plot_single_team_plan(pwl_plans,team_plan,plot_tuples,team_radius,size_list=[],equal_aspect=True,limits=None):
+
+    # Constants
+    num_agents = len(pwl_plans)
+
+    # Define Default Values for Some Arguments
+    default_size = 0.11*4/2
+    if len(size_list) == 0:
+        size_list = [ default_size for agent_index in range(num_agents) ]
+
+    # Algorithm
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.axis('off')
+
+    vertices = []
+    for temp_tuple in plot_tuples:
+        for A, b in temp_tuple[0]:
+            vs = ppm.duality.compute_polytope_vertices(A, b)
+            vertices.append(vs)
+            ppm.polygon.plot_polygon(vs, color = temp_tuple[1], alpha=1.)
+
+    if limits is not None:
+        plt.xlim(limits[0])
+        plt.ylim(limits[1])
+    else:
+        vertices = np.concatenate(vertices, axis=0)
+        xmin, ymin = vertices.min(axis=0)
+        xmax, ymax = vertices.max(axis=0)
+        plt.xlim([xmin - 0.1, xmax + 0.1])
+        plt.ylim([ymin - 0.1, ymax + 0.1])
+
+    if equal_aspect:
+        plt.gca().set_aspect('equal', adjustable='box')
+
+    if pwl_plans is None or pwl_plans[0] is None:
+        plt.show()
+        return
+
+    if len(pwl_plans) <= 4:
+        colors = ['k', np.array([153,0,71])/255, np.array([6,0,153])/255, np.array([0, 150, 0])/255]
+    else:
+        cmap = plt.get_cmap('tab10')
+        colors = [cmap(i) for i in np.linspace(0, 0.85, len(pwl_plans))]
+
+    for i in range(len(pwl_plans)):
+        PWL = pwl_plans[i]
+        ax.plot([P[0][0] for P in PWL], [P[0][1] for P in PWL], '-', color = colors[i])
+        ax.plot(PWL[-1][0][0], PWL[-1][0][1], '*', color = colors[i])
+        print(PWL[0][0][0])
+        print(size_list[i])
+        for P in PWL:
+            ax.add_patch(
+                plt.Circle( (P[0][0], P[0][1]) , size_list[i], color=colors[i] )
+            )
+        # ax.plot(PWL[0][0][0], PWL[0][0][1], 'o', color = colors[i])
+
+    #Plot the Team Plan
+    for P in team_plan:
+        ax.add_patch(
+            plt.Circle(  (P[0][0], P[0][1]) , team_radius, color='m', alpha=0.2)
+        )
+
+    return fig
+
+
+"""
+get_state_at_t
+Description:
+    Gets the state at the time t which should be defined as a linear interpolation of the points in the pwl_curve PWL.
+Inputs:
+    pwl_curve - A List of Tuple{np.Array,float} objects.
+"""
+def get_state_at_t(t,pwl_curve):
+    # Constants
+
+    # Input Checking
+    if t < min([waypoint[1] for waypoint in pwl_curve]):
+        raise(Exception("It appears that the time of interest (" + str(t) + "), is below the range of the trajectory! Minimum time is " + str(min([waypoint[1] for waypoint in pwl_curve])) ))
+
+    if t > max([waypoint[1] for waypoint in pwl_curve]):
+        raise(Exception("It appears that the time of interest (" + str(t) + "), is above the range of the trajectory! Maximum time is " + str(max([waypoint[1] for waypoint in pwl_curve])) ))
+
+    # If t is one of the endpoints of the curve, then this can be done quickly.
+    if t in [waypoint[1] for waypoint in pwl_curve]:
+        for waypoint in pwl_curve:
+            if t == waypoint[1]:
+                return waypoint[0]
+
+    # Find the line segment where t belongs
+    segment_containing_t = -1
+    for waypoint_index in range(len(pwl_curve)-1):
+        pt_i = pwl_curve[waypoint_index]
+        pt_ip1 = pwl_curve[waypoint_index+1]
+        if (pt_i[1] <= t) and (t <= pt_ip1[1]):
+            segment_containing_t = waypoint_index
+
+    # Now interpolate!
+    x1, t1 = pwl_curve[segment_containing_t]
+    x2, t2 = pwl_curve[segment_containing_t+1]
+
+    return ((t2 - t)/(t2-t1)) * x1 + ((t - t1)/(t2-t1))*x2
+
+
+
+"""
+plot_single_frame_of_team_plan
+Description:
+    Plots the state of the environment at time t, when time t is part of the time range defined by the team_plan and
+    pwl_plans for each agent.
+"""
+def plot_single_frame_of_team_plan(t,pwl_plans,team_plan,plot_tuples,team_radius,size_list=[],equal_aspect=True,limits=None,show_team_plan=True):
+    # Constants
+    num_agents = len(pwl_plans)
+
+    # Define Default Values for Some Arguments
+    default_size = 0.11*4/2
+    if len(size_list) == 0:
+        size_list = [ default_size for agent_index in range(num_agents) ]
+
+    # Algorithm
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.axis('off')
+
+    vertices = []
+    for temp_tuple in plot_tuples:
+        for A, b in temp_tuple[0]:
+            vs = ppm.duality.compute_polytope_vertices(A, b)
+            vertices.append(vs)
+            ppm.polygon.plot_polygon(vs, color = temp_tuple[1], alpha=1.)
+
+    if limits is not None:
+        plt.xlim(limits[0])
+        plt.ylim(limits[1])
+    else:
+        vertices = np.concatenate(vertices, axis=0)
+        xmin, ymin = vertices.min(axis=0)
+        xmax, ymax = vertices.max(axis=0)
+        plt.xlim([xmin - 0.1, xmax + 0.1])
+        plt.ylim([ymin - 0.1, ymax + 0.1])
+
+    if equal_aspect:
+        plt.gca().set_aspect('equal', adjustable='box')
+
+    if pwl_plans is None or pwl_plans[0] is None:
+        plt.show()
+        return
+
+    if len(pwl_plans) <= 4:
+        colors = ['k', np.array([153,0,71])/255, np.array([6,0,153])/255, np.array([0, 150, 0])/255]
+    else:
+        cmap = plt.get_cmap('tab10')
+        colors = [cmap(i) for i in np.linspace(0, 0.85, len(pwl_plans))]
+
+    for i in range(len(pwl_plans)):
+        PWL = pwl_plans[i]
+        ax.plot([P[0][0] for P in PWL], [P[0][1] for P in PWL], '-', color = colors[i])
+        
+        # Get State At t from plan and plot it.
+        x_t = get_state_at_t(t,PWL)
+        ax.add_patch(
+            plt.Circle( (x_t[0], x_t[1]) , size_list[i], color=colors[i] )
+        )
+
+        ax.plot(PWL[-1][0][0], PWL[-1][0][1], '*', color = colors[i])
+        print(PWL[0][0][0])
+        print(size_list[i])
+        # ax.plot(PWL[0][0][0], PWL[0][0][1], 'o', color = colors[i])
+
+    #Plot the Team Plan
+    if show_team_plan:
+        for P in team_plan:
+            ax.add_patch(
+                plt.Circle(  (P[0][0], P[0][1]) , team_radius, color='m', alpha=0.2)
+            )
+
+    return fig
+
+def single_team_plan_to_video(filename,pwl_plans,team_plan,plot_tuples,team_radius,size_list=[],equal_aspect=True,limits=None,show_team_plan=True,movie_title='Single Team Plan Video'):
+    # Constants
+
+    FFMpegWriter = manimation.writers['ffmpeg']
+    metadata = dict(
+        title=movie_title,
+        artist='Matplotlib',
+        comment='Movie test!'
+    )
+    writer = FFMpegWriter(fps=15, metadata=metadata)
+
+    print([waypoint[1] for waypoint in team_plan])
+    min_t = min([waypoint[1] for waypoint in team_plan])
+    max_t = max([waypoint[1] for waypoint in team_plan])
+
+    print(min_t)
+    print(max_t)
+
+    num_frames = 100
+
+    num_agents = len(pwl_plans)
+
+    # Define Default Values for Some Arguments
+    default_size = 0.11*4/2
+    if len(size_list) == 0:
+        size_list = [ default_size for agent_index in range(num_agents) ]
+
+    # Algorithm
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.axis('off')
+
+    vertices = []
+    for temp_tuple in plot_tuples:
+        for A, b in temp_tuple[0]:
+            vs = ppm.duality.compute_polytope_vertices(A, b)
+            vertices.append(vs)
+            ppm.polygon.plot_polygon(vs, color = temp_tuple[1], alpha=1.)
+
+    if limits is not None:
+        plt.xlim(limits[0])
+        plt.ylim(limits[1])
+    else:
+        vertices = np.concatenate(vertices, axis=0)
+        xmin, ymin = vertices.min(axis=0)
+        xmax, ymax = vertices.max(axis=0)
+        plt.xlim([xmin - 0.1, xmax + 0.1])
+        plt.ylim([ymin - 0.1, ymax + 0.1])
+
+    if equal_aspect:
+        plt.gca().set_aspect('equal', adjustable='box')
+
+    if pwl_plans is None or pwl_plans[0] is None:
+        plt.show()
+        return
+
+    if len(pwl_plans) <= 4:
+        colors = ['k', np.array([153,0,71])/255, np.array([6,0,153])/255, np.array([0, 150, 0])/255]
+    else:
+        cmap = plt.get_cmap('tab10')
+        colors = [cmap(i) for i in np.linspace(0, 0.85, len(pwl_plans))]
+
+    # num_agents
+    team_positions_at_t = np.zeros((2,num_agents))
+    agent_circles = []
+    for i in range(num_agents):
+        PWL = pwl_plans[i]
+        x_t = get_state_at_t(0.0,PWL)
+        team_positions_at_t[:,i] = x_t
+        print(team_positions_at_t)
+        agent_circles.append(
+            plt.Circle( (team_positions_at_t[0,i], team_positions_at_t[1,i]) , size_list[i], color=colors[i] )
+        )
+        ax.add_patch(agent_circles[-1])
+
+    for i in range(len(pwl_plans)):
+        PWL = pwl_plans[i]
+        ax.plot([P[0][0] for P in PWL], [P[0][1] for P in PWL], '-', color = colors[i])
+
+        ax.plot(PWL[-1][0][0], PWL[-1][0][1], '*', color = colors[i])
+        print(PWL[0][0][0])
+        print(size_list[i])
+        # ax.plot(PWL[0][0][0], PWL[0][0][1], 'o', color = colors[i])
+
+    #Plot the Team Plan
+    if show_team_plan:
+        for P in team_plan:
+            ax.add_patch(
+                plt.Circle(  (P[0][0], P[0][1]) , team_radius, color='m', alpha=0.2)
+            )
+
+    # This function will modify each of the values of the functions above.
+    def update(frame_number):
+        t = (frame_number/num_frames)*(max_t - min_t) + min_t
+        print(t)
+        for i in range(num_agents):
+            plan_i = pwl_plans[i]
+            x_t = get_state_at_t(t,plan_i)
+            team_positions_at_t[:,i] = x_t
+            agent_circles[i].set(
+                center=x_t,
+            )
+
+    # Construct the animation, using the update function as the animation
+    # director.
+    animation = manimation.FuncAnimation(fig, update, np.arange(1, num_frames),interval=25)
+    animation.save('double_pendulum.mp4', fps=15)
+
+    # # Algorithm
+    # for t in np.linspace(min_t,max_t,num_frames):
+    #     fig_t = plot_single_frame_of_team_plan(
+    #         t, pwl_plans=pwl_plans, team_plan=team_plan, plot_tuples=plot_tuples, team_radius=team_radius, size_list=size_list, equal_aspect=equal_aspect, limits=limits, show_team_plan=True        )
+
+    #     writer.saving(fig_t,filename,20)
+    #     writer.grab_frame()

@@ -115,6 +115,8 @@ ENV/
 env.bak/
 venv.bak/
 stlplanning_env/
+stlplanning_env2/
+stlplanning_env4/
 
 # Spyder project settings
 .spyderproject
@@ -139,3 +141,8 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+
+# Ignoring Some Testing Files
+tests/**.png
+tests/*.yml
