@@ -373,7 +373,7 @@ Description:
     Introducing a breaking change to plan.
     This function will not only return the final values for the trajectory, but also the values of ALL variables in the Gurobi model.
 """
-def plan2(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MIPGap=1e-4, max_segs=None, tmax=None, hard_goals=None, size_list=[]):
+def plan2(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MIPGap=1e-4, max_segs=None, tmax=None, hard_goals=None, size_list=[],ignore_clearance_constraints=False):
     # Create the limitations on the number of piece-wise linear segments.
     if num_segs is None:
         min_segs = 1
@@ -451,7 +451,8 @@ def plan2(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MI
             z = Conjunction(conjunctions)
             add_CDTree_Constraints(m, z)
 
-        add_mutual_clearance_constraints(m, PWLs, bloat)
+        if ignore_clearance_constraints:
+            add_mutual_clearance_constraints(m, PWLs, bloat)
 
         # obj = sum([L1Norm(m, _sub(PWL[i][0], PWL[i+1][0])) for PWL in PWLs for i in range(len(PWL)-1)])
         obj = sum([PWL[-1][1] for PWL in PWLs])
