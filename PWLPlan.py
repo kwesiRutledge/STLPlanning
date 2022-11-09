@@ -64,6 +64,12 @@ def always(i, a, b, zphis, PWL):
     for j in range(len(PWL)-1):
         t_j = PWL[j][1]
         t_j_1 = PWL[j+1][1]
+        print(t_j, t_j_1)
+        print(t_i+a)
+        print(t_i_1)
+        print(b)
+        print(t_i_1 + b)
+        print(zphis[j])
         conjunctions.append(Disjunction([noIntersection(t_j, t_j_1, t_i + a, t_i_1 + b), zphis[j]]))
     return Conjunction(conjunctions)
 
@@ -131,6 +137,8 @@ def mu(i, PWL, bloat_factor, A, b):
         for j in [i, i+1]:
             x = PWL[j][0]
             conjunctions.append(b[e] - np.linalg.norm(a) * bloat_factor - sum([a[k]*x[k] for k in range(len(x))]) - EPS)
+    
+    print(conjunctions)
     return Conjunction(conjunctions)
 
 def negmu(i, PWL, bloat_factor, A, b):
@@ -145,6 +153,7 @@ def negmu(i, PWL, bloat_factor, A, b):
             x = PWL[j][0]
             conjunctions.append(sum([a[k]*x[k] for k in range(len(x))]) - (b[e] + np.linalg.norm(a) * bloat_factor) - EPS)
         disjunctions.append(Conjunction(conjunctions))
+    print(disjunctions)
     return Disjunction(disjunctions)
 
 def add_space_constraints(model, xlist, limits, bloat=0.):
@@ -233,6 +242,7 @@ def handleSpecTree(spec, PWL, bloat_factor, size):
     elif spec.op == 'BF':
         spec.zs = [bounded_eventually(i, spec.info['int'][0], spec.info['int'][1], spec.deps[0].zs, PWL, spec.info['tmax']) for i in range(len(PWL)-1)]
     elif spec.op == 'A':
+        print(spec.info['int'][0], spec.info['int'][1])
         spec.zs = [always(i, spec.info['int'][0], spec.info['int'][1], spec.deps[0].zs, PWL) for i in range(len(PWL)-1)]
     else:
         raise ValueError('wrong op code')
@@ -458,7 +468,7 @@ def plan2(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MI
         obj = sum([PWL[-1][1] for PWL in PWLs])
         m.setObjective(obj, GRB.MINIMIZE)
 
-        m.write("test.lp")
+        m.write("plan2.lp")
         print('NumBinVars: %d'%m.getAttr('NumBinVars'))
 
         # m.computeIIS()
@@ -481,7 +491,8 @@ def plan2(x0s, specs, bloat, limits=None, num_segs=None, tasks=None, vmax=3., MI
             var_values = [var.X for var in vars]
             # - runtime
             model_data = {
-                'Runtime': m.Runtime
+                'Runtime': m.Runtime,
+                'TypeList': [var.VType for var in vars]
             }
 
             m.dispose()

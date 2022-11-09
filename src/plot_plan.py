@@ -7,8 +7,6 @@ Description:
 """
 
 from importlib.metadata import metadata
-from tkinter import CENTER
-from typing import List
 import matplotlib.pyplot as plt
 import pypoman as ppm
 import numpy as np
@@ -61,7 +59,7 @@ def plot_plan(pwl_plans,plot_tuples,size_list=[],equal_aspect=True,limits=None):
         cmap = plt.get_cmap('tab10')
         colors = [cmap(i) for i in np.linspace(0, 0.85, len(pwl_plans))]
 
-    for i in range(len(PWLs)):
+    for i in range(len(pwl_plans)):
         PWL = pwl_plans[i]
         ax.plot([P[0][0] for P in PWL], [P[0][1] for P in PWL], '-', color = colors[i])
         ax.plot(PWL[-1][0][0], PWL[-1][0][1], '*', color = colors[i])
@@ -248,8 +246,8 @@ def plot_single_frame_of_team_plan(t,pwl_plans,team_plan,plot_tuples,team_radius
         )
 
         ax.plot(PWL[-1][0][0], PWL[-1][0][1], '*', color = colors[i])
-        print(PWL[0][0][0])
-        print(size_list[i])
+        # print(PWL[0][0][0])
+        # print(size_list[i])
         # ax.plot(PWL[0][0][0], PWL[0][0][1], 'o', color = colors[i])
 
     #Plot the Team Plan
@@ -261,7 +259,7 @@ def plot_single_frame_of_team_plan(t,pwl_plans,team_plan,plot_tuples,team_radius
 
     return fig
 
-def single_team_plan_to_video(filename,pwl_plans,team_plan,plot_tuples,team_radius,size_list=[],equal_aspect=True,limits=None,show_team_plan=True,movie_title='Single Team Plan Video'):
+def single_team_plan_to_video(filename,pwl_plans,team_plan,plot_tuples,team_radius,size_list=[],equal_aspect=True,limits=None,show_team_plan=False,movie_title='Single Team Plan Video',show_moving_team_radius:bool=True):
     # Constants
 
     FFMpegWriter = manimation.writers['ffmpeg']
@@ -272,12 +270,8 @@ def single_team_plan_to_video(filename,pwl_plans,team_plan,plot_tuples,team_radi
     )
     writer = FFMpegWriter(fps=15, metadata=metadata)
 
-    print([waypoint[1] for waypoint in team_plan])
     min_t = min([waypoint[1] for waypoint in team_plan])
     max_t = max([waypoint[1] for waypoint in team_plan])
-
-    print(min_t)
-    print(max_t)
 
     num_frames = 100
 
@@ -331,7 +325,7 @@ def single_team_plan_to_video(filename,pwl_plans,team_plan,plot_tuples,team_radi
         PWL = pwl_plans[i]
         x_t = get_state_at_t(0.0,PWL)
         team_positions_at_t[:,i] = x_t
-        print(team_positions_at_t)
+        #print(team_positions_at_t)
         agent_circles.append(
             plt.Circle( (team_positions_at_t[0,i], team_positions_at_t[1,i]) , size_list[i], color=colors[i] )
         )
@@ -342,8 +336,8 @@ def single_team_plan_to_video(filename,pwl_plans,team_plan,plot_tuples,team_radi
         ax.plot([P[0][0] for P in PWL], [P[0][1] for P in PWL], '-', color = colors[i])
 
         ax.plot(PWL[-1][0][0], PWL[-1][0][1], '*', color = colors[i])
-        print(PWL[0][0][0])
-        print(size_list[i])
+        # print(PWL[0][0][0])
+        # print(size_list[i])
         # ax.plot(PWL[0][0][0], PWL[0][0][1], 'o', color = colors[i])
 
     #Plot the Team Plan
@@ -352,23 +346,41 @@ def single_team_plan_to_video(filename,pwl_plans,team_plan,plot_tuples,team_radi
             ax.add_patch(
                 plt.Circle(  (P[0][0], P[0][1]) , team_radius, color='m', alpha=0.2)
             )
+    
+    # Plot the team plan over time
+    P0 = team_plan[0]
+    team_circle = plt.Circle( (P0[0][0], P0[0][1]) , team_radius , color='m', alpha=0.2 )
+    if show_moving_team_radius:
+        ax.add_patch(
+            team_circle
+        )
+            
+
 
     # This function will modify each of the values of the functions above.
     def update(frame_number):
         t = (frame_number/num_frames)*(max_t - min_t) + min_t
-        print(t)
+        # print(t)
         for i in range(num_agents):
             plan_i = pwl_plans[i]
+            # print(plan_i)
             x_t = get_state_at_t(t,plan_i)
             team_positions_at_t[:,i] = x_t
             agent_circles[i].set(
                 center=x_t,
             )
 
+        # If we want to show the team circle moving, then update it here
+        if show_moving_team_radius:
+            team_center_t = get_state_at_t(t,team_plan)
+            team_circle.set(
+                center=team_center_t
+            )
+
     # Construct the animation, using the update function as the animation
     # director.
     animation = manimation.FuncAnimation(fig, update, np.arange(1, num_frames),interval=25)
-    animation.save('double_pendulum.mp4', fps=15)
+    animation.save(filename=filename, fps=15)
 
     # # Algorithm
     # for t in np.linspace(min_t,max_t,num_frames):
