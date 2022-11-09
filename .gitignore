@@ -146,3 +146,6 @@ cython_debug/
 # Ignoring Some Testing Files
 tests/***.png
 *.yml
+
+# Ignore Temporary Mac Files
+*.DS_Store
